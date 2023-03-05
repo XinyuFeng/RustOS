@@ -49,14 +49,15 @@ struct Buffer {
 }
 
 use lazy_static::lazy_static;
+use spin::Mutex;
 
 lazy_static! {
-    // statuc mut is highly discouraged.
-    pub static ref WRITER: Writer = Writer {
+    // static mut is highly discouraged.
+    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
-    };
+    });
 }
 
 pub struct Writer {
@@ -139,4 +140,26 @@ pub fn print_sth() {
     // This is just use rust's formatting macro so we can easily print different types.
     // The actual way of printing is still in the write_byte func.
     write!(writer, "The numbers are {} and {}", 42, 1.0 / 3.0).unwrap();
+}
+
+// to make the macro available everywhere in our crate.
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
+}
+
+// To use this in other place: use crate::println
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+// need to be public since the macros need to be able to call _print from outside of the module.
+// doc(hidden) to hide if from the generated documentation
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    // unwrap: panics if printing isn't successful.
+    WRITER.lock().write_fmt(args).unwrap();
 }
